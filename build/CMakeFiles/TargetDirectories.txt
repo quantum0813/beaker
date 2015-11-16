@@ -1,0 +1,5 @@
+/home/eric/Documents/compiler_design/beaker/build/beaker/CMakeFiles/beaker-interpret.dir
+/home/eric/Documents/compiler_design/beaker/build/beaker/CMakeFiles/beaker-compile.dir
+/home/eric/Documents/compiler_design/beaker/build/lingo/lingo/CMakeFiles/lingo.dir
+/home/eric/Documents/compiler_design/beaker/build/beaker/CMakeFiles/beaker.dir
+/home/eric/Documents/compiler_design/beaker/build/lingo/examples/calc/CMakeFiles/calc.dir

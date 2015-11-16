@@ -1,0 +1,1 @@
+/usr/bin/c++   -Wall -std=c++1y   CMakeFiles/calc.dir/main.cpp.o CMakeFiles/calc.dir/ast.cpp.o CMakeFiles/calc.dir/lexer.cpp.o CMakeFiles/calc.dir/parser.cpp.o CMakeFiles/calc.dir/directive.cpp.o CMakeFiles/calc.dir/step.cpp.o  -o calc  -L/usr/lib/llvm-3.5/lib -rdynamic ../../lingo/liblingo.a -lgmp -lboost_system -lboost_filesystem -Wl,-rpath,/usr/lib/llvm-3.5/lib 
