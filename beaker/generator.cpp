@@ -14,6 +14,7 @@
 #include "llvm/IR/Module.h"
 
 #include <iostream>
+#include <bits/stl_stack.h>
 
 
 // -------------------------------------------------------------------------- //
@@ -508,11 +509,20 @@ void
 Generator::gen(If_then_stmt const* s)
 {
   llvm::Value* cond = gen(s->condition());
-  cond = build.CreateFCmpONE(cond, llvm::ConstantFP::get(llvm::getGlobalContext(), llvm::APFloat(0.0)));
+  llvm::Function* fn = build.GetInsertBlock()->getParent();
+  cond = build.CreateICmpEQ(cond, build.getTrue());
 
-  llvm::BasicBlock* then = llvm::BasicBlock::Create(llvm::getGlobalContext(), "then");
-  build.CreateC
-  throw std::runtime_error("not implemented");
+  llvm::BasicBlock* then = llvm::BasicBlock::Create(cxt, "ifthen", fn);
+  llvm::BasicBlock* merge = llvm::BasicBlock::Create(cxt, "merge", fn);
+
+  build.CreateCondBr(cond, then, merge);
+
+  build.SetInsertPoint(then);
+  gen(s->body());
+  build.CreateBr(merge);
+
+  fn->getBasicBlockList().push_back(merge);
+  build.SetInsertPoint(merge);
 }
 
 
@@ -520,58 +530,88 @@ void
 Generator::gen(If_else_stmt const* s)
 {
   llvm::Value* cond = gen(s->condition());
-  cond = build.CreateFCmpONE(cond, llvm::ConstantFP::get(llvm::getGlobalContext(), llvm::APFloat(0.0)));
+  llvm::Function* fn = build.GetInsertBlock()->getParent();
+  cond = build.CreateICmpEQ(cond, build.getTrue());
 
-  llvm::Function* func = build.GetInsertBlock()->getParent();
+  llvm::BasicBlock* then = llvm::BasicBlock::Create(cxt, "ifthen", fn);
+  llvm::BasicBlock* elseBl = llvm::BasicBlock::Create(cxt, "ifelse", fn);
+  llvm::BasicBlock* merge = llvm::BasicBlock::Create(cxt, "ifmerge", fn);
 
-  llvm::BasicBlock* thenBlock = llvm::BasicBlock::Create(llvm::getGlobalContext(), "then", func);
-  llvm::BasicBlock* elseBlock = llvm::BasicBlock::Create(llvm::getGlobalContext(), "else");
-  llvm::BasicBlock* mergeBlock = llvm::BasicBlock::Create(llvm::getGlobalContext(), "ifcont");
+  build.CreateCondBr(cond, then, elseBl);
 
-  build.CreateCondBr(cond, thenBlock, elseBlock);
-
-  build.SetInsertPoint(thenBlock);
-
+  build.SetInsertPoint(then);
   gen(s->true_branch());
+  build.CreateBr(merge);
 
-  build.CreateBr(mergeBlock);
-  thenBlock = build.GetInsertBlock();
+  then = build.GetInsertBlock();
 
-  func->getBasicBlockList().push_back(elseBlock);
-  build.SetInsertPoint(elseBlock);
-
+  fn->getBasicBlockList().push_back(elseBl);
+  build.SetInsertPoint(elseBl);
   gen(s->false_branch());
+  build.CreateBr(merge);
 
-  build.CreateBr(mergeBlock);
-  elseBlock = build.GetInsertBlock();
+  elseBl = build.GetInsertBlock();
 
-  func->getBasicBlockList().push_back(mergeBlock);
-  build.SetInsertPoint(mergeBlock);
-  llvm::PHINode* pn = build.CreatePHI(llvm::Type::getDoubleTy(llvm::getGlobalContext()), 2, "iftmp");
-
-  pn->addIncoming(thenBlock, )
-  throw std::runtime_error("not implemented");
+  fn->getBasicBlockList().push_back(merge);
+  build.SetInsertPoint(merge);
 }
 
+std::stack<llvm::BasicBlock*> breakStack;
+std::stack<llvm::BasicBlock*> continueStack;
 
 void
 Generator::gen(While_stmt const* s)
 {
-  throw std::runtime_error("not implemented");
+  llvm::Function* fn = build.GetInsertBlock()->getParent();
+  llvm::BasicBlock* start = llvm::BasicBlock::Create(cxt, "start", fn);
+  llvm::BasicBlock* body = llvm::BasicBlock::Create(cxt, "body", fn);
+  llvm::BasicBlock* merge = llvm::BasicBlock::Create(cxt, "merge", fn);
+
+  continueStack.push(start);
+  breakStack.push(merge);
+
+  build.CreateBr(start);
+  build.SetInsertPoint(start);
+
+  llvm::Value* cond = gen(s->condition());
+  build.CreateCondBr(cond, body, merge);
+  start = build.GetInsertBlock();
+
+  fn->getBasicBlockList().push_back(body);
+  build.SetInsertPoint(body);
+  gen(s->body());
+  build.CreateBr(start);
+  body = build.GetInsertBlock();
+
+  fn->getBasicBlockList().push_back(merge);
+  build.SetInsertPoint(merge);
 }
 
 
 void
 Generator::gen(Break_stmt const* s)
 {
-  throw std::runtime_error("not implemented");
+  llvm::BasicBlock* merge = breakStack.top();
+  llvm::Function* fn = build.GetInsertBlock()->getParent();
+
+  breakStack.pop();
+  build.CreateBr(merge);
+  llvm::BasicBlock* noReach = llvm::BasicBlock::Create(cxt, "unreachable");
+  fn->getBasicBlockList().push_back(noReach);
+  build.SetInsertPoint(noReach);
 }
 
 
 void
 Generator::gen(Continue_stmt const* s)
 {
-  throw std::runtime_error("not implemented");
+  llvm::BasicBlock* start = continueStack.top();
+  llvm::Function* fn = build.GetInsertBlock()->getParent();
+
+  build.CreateBr(start);
+  llvm::BasicBlock* noReach = llvm::BasicBlock::Create(cxt, "cont_unreachable");
+  fn->getBasicBlockList().push_back(noReach);
+  build.SetInsertPoint(noReach);
 }
 
 
@@ -626,7 +666,18 @@ Generator::gen(Decl const* d)
 void
 Generator::gen_local(Variable_decl const* d)
 {
-  throw std::runtime_error("not implemented");
+  llvm::Function* fn = build.GetInsertBlock()->getParent();
+  llvm::BasicBlock& b = fn->getEntryBlock();
+  llvm::IRBuilder<> tmp(&b, b.begin());
+  llvm::Type* type = get_type(d->type());
+  String name = d->name()->spelling();
+  llvm::Value* ptr = tmp.CreateAlloca(type, nullptr, name);
+
+  stack.top().bind(d, ptr);
+
+  llvm::Value* init = gen(d->init());
+
+  build.CreateStore(init, ptr);
 }
 
 
